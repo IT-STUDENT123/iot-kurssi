@@ -24,8 +24,8 @@
 
 #include "secrets/secrets.h"
 
-char ssid[] = SECRET_SSID;    // your network SSID (name)
-char pass[] = SECRET_PASS;    // your network password (use for WPA, or use as key for WEP)
+char ssid[] = SECRET_SSID;  // your network SSID (name)
+char pass[] = SECRET_PASS;  // your network password (use for WPA, or use as key for WEP)
 
 char servername[] = SECRET_SERVERNAME;
 int serverport = 8080;
@@ -66,8 +66,6 @@ int h2s;  // humidity to servo state
 int t2s;  // temperature to servo state
 
 
-String get_response_data = "";
-String post_response_data = "";
 //servo position to set when cooling down // configure this!
 int coolingPosition = 0;
 
@@ -100,6 +98,7 @@ String getgatewayip() {
 }
 
 
+
 void logger(String text) {
   if (logger_on == true) {
     Serial.println(text);
@@ -126,13 +125,13 @@ void wifi_init() {
     }
 
     wifi_connect();
-    delay(1000);
+    delay(5000);
 
 
     //keep connecting until success
-    long TIME = millis();
+    unsigned long TIME = millis();
     while (WiFi.status() != WL_CONNECTED) {
-      if (millis() - TIME > 10000) {
+      if (millis() - TIME > 10000L) {
         wifi_connect();
         TIME = millis();
       }
@@ -199,25 +198,13 @@ int read_sensor_data() {
     return 0;
   }
   return 1;
-  /*
-  loggersl(F("Humidity: "));
-  loggersl(h);
-  loggersl(F("%  Temperature: "));
-  loggersl(t);
-  loggersl(F("°C "));
-  loggersl(F(" Heat index: "));
-  loggersl(hic);
-  loggersl(F("°C "));
-  */
-  //loggersl(F("Heat index: "));
-  //logger(hic);
 }
 
 int update_targets() {
   //What are the temperature targets?
   //Min, Max, Single target?
-  float targ_temperature = -1;
-  float targ_humidity = -1;
+  float targ_temperature = -99;
+  float targ_humidity = -99;
 
 
   //check connection
@@ -338,12 +325,6 @@ int upload_data(char *host, int port) {
     }
 
 
-    /*while (client.available()) {
-      char c = client.read();
-      post_response_data += String(c);
-      post_response_data = post_response_data + c;
-    }*/
-
     if (client.connected()) {
       logger("\ndisconnecting from server.");
       client.stop();
@@ -431,14 +412,25 @@ void loop() {
   // check if enough time has passed for us to get new measurements.
   //...
   unsigned long TIME = millis();
+
+
   if (TIME - LAST_TARGET_UPDATE_TIME >= TARGET_UPDATE_DELAY || LAST_TARGET_UPDATE_TIME == 0) {
-    update_targets();
-    LAST_TARGET_UPDATE_TIME = TIME;
+
+    //check connection
+    if (WiFi.status() != WL_CONNECTED) {
+      //ERROR
+      logger("WIFI NOT CONNECTED! Attempting to reconnect.");
+      wifi_init();
+    } else {
+      update_targets();
+      LAST_TARGET_UPDATE_TIME = TIME;
+    }
   }
 
   if (TIME - LAST_SENSOR_UPDATE_TIME >= SENSOR_UPDATE_DELAY || LAST_SENSOR_UPDATE_TIME == 0) {
     logger("SENSOR_UPDATE...");
     // reads current temperature, saves value in 'temperature' global variable
+
     switch (read_sensor_data()) {
       case -1:
         //something went wrong!
@@ -446,11 +438,15 @@ void loop() {
 
       case 1:
         //read OK, but nothing was updated...
+        logger("Current temp: " + String(temperature) + "°C");
+        logger("Current humidity: " + String(humidity));
+        LAST_SENSOR_UPDATE_TIME = TIME;
         break;
 
       case 0:
+        LAST_SENSOR_UPDATE_TIME = TIME;
         //Read OK, and something was updated.
-        logger("Current temp: " + String(temperature));
+        logger("Current temp: " + String(temperature) + "°C");
         logger("Current humidity: " + String(humidity));
         sensor_data_json["temperature"] = temperature;
         sensor_data_json["humidity"] = humidity;
@@ -475,13 +471,17 @@ void loop() {
 
 
 
-    Serial.print("Target humidity: ");
-    Serial.println(wants_humidity);
-    Serial.print("Target temperature: ");
-    Serial.println(wants_temp);
+    loggersl("Target humidity: ");
+    logger(String(wants_humidity));
+    loggersl("Target temperature: ");
+    logger(String(wants_temp));
     //upload new readings...
+    if (WiFi.status() != WL_CONNECTED) {
+      //ERROR
+      logger("WIFI NOT CONNECTED! Attempting to reconnect.");
+      wifi_init();
+    }
     upload_data(servername, serverport);
-    LAST_SENSOR_UPDATE_TIME = TIME;
   }
   //
 }
