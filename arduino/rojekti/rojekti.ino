@@ -84,316 +84,312 @@ DynamicJsonDocument sensor_data_json(capacity_sdj);
 //----------------------------------------------------------------------------
 
 String IpAddress2String(const IPAddress &ipAddress) {
-  return String(ipAddress[0]) + String(".") + String(ipAddress[1]) + String(".") + String(ipAddress[2]) + String(".") + String(ipAddress[3]);
+    return String(ipAddress[0]) + String(".") + String(ipAddress[1]) + String(".") + String(ipAddress[2]) + String(".") + String(ipAddress[3]);
 }
 
 String getlocalip() {
-  IPAddress localip = WiFi.localIP();
-  return IpAddress2String(localip);
+    IPAddress localip = WiFi.localIP();
+    return IpAddress2String(localip);
 }
 
 String getgatewayip() {
-  IPAddress gatewayip = WiFi.gatewayIP();
-  return IpAddress2String(gatewayip);
+    IPAddress gatewayip = WiFi.gatewayIP();
+    return IpAddress2String(gatewayip);
 }
 
 
 
 void logger(String text) {
-  if (logger_on == true) {
-    Serial.println(text);
-  }
+    if (logger_on == true) {
+        Serial.println(text);
+    }
 }
 void loggersl(String text) {
-  if (logger_on == true) {
-    Serial.print(text);
-  }
+    if (logger_on == true) {
+        Serial.print(text);
+    }
 }
 
 //---------------------------------------------------------------
 
 //call this to connect wifi.
 void wifi_init() {
-  // check for the WiFi module:
-  if (WiFi.status() == WL_NO_MODULE) {
-    logger("Communication with WiFi module failed!");
-    // don't continue
-  } else {
-    String fv = WiFi.firmwareVersion();
-    if (fv < WIFI_FIRMWARE_LATEST_VERSION) {
-      logger("Please upgrade the firmware");
-    }
+    // check for the WiFi module:
+    if (WiFi.status() == WL_NO_MODULE) {
+        logger("Communication with WiFi module failed!");
+        // don't continue
+    } else {
+        String fv = WiFi.firmwareVersion();
+        if (fv < WIFI_FIRMWARE_LATEST_VERSION) {
+            logger("Please upgrade the firmware");
+        }
 
-    wifi_connect();
-    delay(5000);
-
-
-    //keep connecting until success
-    unsigned long TIME = millis();
-    while (WiFi.status() != WL_CONNECTED) {
-      if (millis() - TIME > 10000L) {
         wifi_connect();
-        TIME = millis();
-      }
-    }
-    logger("Wifi init succesful.");
-    logger("Local IP: " + getlocalip());
-    logger("Remote IP: " + getgatewayip());
-    // print your MAC address:
-    byte mac[6];
-    WiFi.macAddress(mac);
-    logger("MAC address: ");
-    printMacAddress(mac);
+        delay(500);
 
-    pingServer();
-  }
+
+        //keep connecting until success
+        unsigned long TIME = millis();
+        while (WiFi.status() != WL_CONNECTED) {
+            if (millis() - TIME > 10000L) {
+                wifi_connect();
+                TIME = millis();
+            }
+        }
+        logger("Wifi connection to Access Point " + String(WiFi.SSID()) + " succesful.");
+        logger("Local IP: " + getlocalip());
+        logger("Remote IP: " + getgatewayip());
+        // print your MAC address:
+        byte mac[6];
+        WiFi.macAddress(mac);
+        logger("MAC address: ");
+        printMacAddress(mac);
+
+        pingServer();
+    }
 }
 
 // only used with wifi_init()
 void wifi_connect() {
-  // attempt to connect to WiFi network:
-  if (WiFi.status() != WL_CONNECTED) {
-    loggersl("Attempting to connect to WPA SSID: ");
-    logger(ssid);
-    // Connect to WPA/WPA2 network:
-    wifistatus = WiFi.begin(ssid, pass);
-    //delay handled elsewhere
-  }
+    // attempt to connect to WiFi network:
+    if (WiFi.status() != WL_CONNECTED) {
+        loggersl("Attempting to connect to WPA SSID: ");
+        logger(ssid);
+        // Connect to WPA/WPA2 network:
+        wifistatus = WiFi.begin(ssid, pass);
+        //delay handled elsewhere
+    }
 }
 
 void display_sensor_data() {
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println(String(temperature) + " C");
-  display.println(String(humidity) + " %");
-  display.println("Servo:" + String(h2s));
-  display.display();
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.println(String(temperature) + " C");
+    display.println(String(humidity) + " %");
+    display.println("Servo:" + String(myservo.read()));
+    display.display();
 }
 
 int read_sensor_data() {
-  //humidity 0-100
-  float hNow = dht.readHumidity();
+    //humidity 0-100
+    float hNow = dht.readHumidity();
 
-  // Read temperature as Celsius (the default)
-  float tNow = dht.readTemperature();
+    // Read temperature as Celsius (the default)
+    float tNow = dht.readTemperature();
 
-  bool update_display = false;
+    bool update_display = false;
 
-  // Check if any reads failed and exit early (to try again).
-  if (isnan(hNow) || isnan(tNow)) {
-    logger(F("Failed to read from DHT sensor!"));
-    return -1;
-  } else {
-    if (tNow != temperature) {
-      temperature = tNow;
-      update_display = true;
+    // Check if any reads failed and exit early (to try again).
+    if (isnan(hNow) || isnan(tNow)) {
+        logger(F("Failed to read from DHT sensor!"));
+        return -1;
+    } else {
+        if (tNow != temperature) {
+            temperature = tNow;
+            update_display = true;
+        }
+
+        if (hNow != humidity) {
+            humidity = hNow;
+            update_display = true;
+        }
     }
-
-    if (hNow != humidity) {
-      humidity = hNow;
-      update_display = true;
+    if (update_display) {
+        return 0;
     }
-  }
-  if (update_display) {
-    return 0;
-  }
-  return 1;
+    return 1;
 }
 
 int update_targets() {
-  //What are the temperature targets?
-  //Min, Max, Single target?
-  float targ_temperature = -99;
-  float targ_humidity = -99;
+    //What are the temperature targets?
+    //Min, Max, Single target?
+    float targ_temperature = -99;
+    float targ_humidity = -99;
 
 
-  //check connection
-  if (WiFi.status() != WL_CONNECTED) {
-    //ERROR
-    logger("update_targets: WIFI NOT CONNECTED!");
-    return -1;
-  }
+    //check connection
+    if (WiFi.status() != WL_CONNECTED) {
+        //ERROR
+        logger("update_targets: WIFI NOT CONNECTED!");
+        return -1;
+    }
 
 
-  logger(F("Connecting..."));
+    logger(F("Connecting..."));
 
-  if (!client.connect(servername, serverport)) {
-    logger("update_targets: Client not connected.");
-    return -1;
-  }
+    if (!client.connect(servername, serverport)) {
+        logger("update_targets: Client not connected.");
+        return -1;
+    }
 
-  logger("update_targets: Client connected.");
+    logger("update_targets: Client connected.");
 
-  // Send HTTP request
-  client.println(F("GET /api/targets HTTP/1.0"));
-  client.println("Host: " + String(servername));
-  client.println(F("Connection: close"));
-  if (client.println() == 0) {
-    logger("update_targets: Failed to send request");
+    // Send HTTP request
+    client.println(F("GET /api/targets HTTP/1.0"));
+    client.println("Host: " + String(servername));
+    client.println(F("Connection: close"));
+    if (client.println() == 0) {
+        logger("update_targets: Failed to send request");
+        client.stop();
+        return -1;
+    }
+
+    // Check HTTP status
+    /*
+    char status[32] = { 0 };
+    client.readBytesUntil('\r', status, sizeof(status));
+    // It should be "HTTP/1.0 200 OK" or "HTTP/1.1 200 OK"
+    if (strcmp(status + 9, "200 OK") != 0) {
+      loggersl("Unexpected response: ");
+      logger(status);
+      client.stop();
+      return -1;
+    }*/
+
+    // Skip HTTP headers
+    char endOfHeaders[] = "\r\n\r\n";
+    if (!client.find(endOfHeaders)) {
+        logger("Invalid response");
+        client.stop();
+        return -1;
+    }
+
+
+
+    // Allocate the JSON document
+    // Use https://arduinojson.org/v6/assistant to compute the capacity.
+    const size_t capacity = JSON_OBJECT_SIZE(2) + JSON_ARRAY_SIZE(2) + 60;
+    //const size_t capacity = JSON_OBJECT_SIZE(4);
+    DynamicJsonDocument json_response(capacity);
+
+    // Parse JSON object
+    DeserializationError error = deserializeJson(json_response, client);
+    if (error) {
+        loggersl("deserializeJson() failed: ");
+        logger(error.f_str());
+        client.stop();
+        return -1;
+    }
+    loggersl("target json response: ");
+    serializeJson(json_response, Serial);
+    logger("");
+
+    //targ_temperature = doc["temperature_targe"];
+    //targ_humidity = doc["humidity_target"];
+
+    //targ_temperature = doc["target_temperature"].as<float>();
+    //targ_humidity = doc["target_humidity"].as<float>();
+
+    targ_temperature = json_response["targets_json"]["temperature_target"];
+    targ_humidity = json_response["targets_json"]["humidity_target"];
+
+
+    wants_temp = targ_temperature;
+    wants_humidity = targ_humidity;
+
+    //logger("wants_temp: " + String(wants_temp));
+    //logger("wants_humidity: " + String(wants_humidity));
+
+    // Disconnect
     client.stop();
-    return -1;
-  }
 
-  // Check HTTP status
-  /*
-  char status[32] = { 0 };
-  client.readBytesUntil('\r', status, sizeof(status));
-  // It should be "HTTP/1.0 200 OK" or "HTTP/1.1 200 OK"
-  if (strcmp(status + 9, "200 OK") != 0) {
-    loggersl("Unexpected response: ");
-    logger(status);
-    client.stop();
-    return -1;
-  }*/
-
-  // Skip HTTP headers
-  char endOfHeaders[] = "\r\n\r\n";
-  if (!client.find(endOfHeaders)) {
-    logger("Invalid response");
-    client.stop();
-    return -1;
-  }
-
-
-
-  // Allocate the JSON document
-  // Use https://arduinojson.org/v6/assistant to compute the capacity.
-  const size_t capacity = JSON_OBJECT_SIZE(2) + JSON_ARRAY_SIZE(2) + 60;
-  //const size_t capacity = JSON_OBJECT_SIZE(4);
-  DynamicJsonDocument doc(capacity);
-
-  // Parse JSON object
-  DeserializationError error = deserializeJson(doc, client);
-  if (error) {
-    loggersl("deserializeJson() failed: ");
-    logger(error.f_str());
-    client.stop();
-    return -1;
-  }
-
-  // Extract values
-  //Serial.println(F("Response:"));
-  //Serial.println(doc["sensor"].as<const char *>());
-  //Serial.println(doc["time"].as<long>());
-  //Serial.println(doc["data"][0].as<float>(), 6);
-  //Serial.println(doc["data"][1].as<float>(), 6);
-
-  logger("Response: ");
-  logger(doc["temperature_target"]);
-  logger(doc["humidity_target"]);
-
-  //targ_temperature = doc["temperature_targe"];
-  //targ_humidity = doc["humidity_target"];
-
-  //targ_temperature = doc["target_temperature"].as<float>();
-  //targ_humidity = doc["target_humidity"].as<float>();
-
-  targ_temperature = doc["temperature_target"];
-  targ_humidity = doc["humidity_target"];
-
-
-  wants_temp = targ_temperature;
-  wants_humidity = targ_humidity;
-
-
-  // Disconnect
-  client.stop();
-
-  return 0;
+    return 0;
 }
 
 
 int upload_data(char *host, int port) {
-  if (WiFi.status() == WL_CONNECTED) {
-    //logger("upload_data: WiFi is connected.");
-    if (client.connect(host, serverport)) {
+    if (WiFi.status() == WL_CONNECTED) {
+        //logger("upload_data: WiFi is connected.");
+        if (client.connect(host, serverport)) {
 
-      logger("Connected " + String(host) + ":" + port);
-      logger("Making request...");
-      String sensor_data_string;
-      serializeJson(sensor_data_json, sensor_data_string);
-      logger("Data: " + sensor_data_string);
-      client.println("POST /api/upload HTTP/1.1");
-      client.println("Host: " + String(host));
-      client.println("Content-Type: application/json;charset=UTF-8");
-      client.print("Content-Length: ");
-      client.println(measureJson(sensor_data_json));
-      client.println();
-      serializeJson(sensor_data_json, client);
+            logger("Connected " + String(host) + ":" + port);
+            logger("Making request...");
+            String sensor_data_string;
+            serializeJson(sensor_data_json, sensor_data_string);
+            logger("Data: " + sensor_data_string);
+            client.println("POST /api/upload HTTP/1.1");
+            client.println("Host: " + String(host));
+            client.println("Content-Type: application/json;charset=UTF-8");
+            client.print("Content-Length: ");
+            client.println(measureJson(sensor_data_json));
+            client.println();
+            serializeJson(sensor_data_json, client);
+        } else {
+            logger("SERVER CONNECTION FAILED!!!");
+        }
+
+
+        if (client.connected()) {
+            logger("\ndisconnecting from server.");
+            client.stop();
+        }
     } else {
-      logger("SERVER CONNECTION FAILED!!!");
+        logger("upload_data: WiFi NOT CONNECTED.");
     }
-
-
-    if (client.connected()) {
-      logger("\ndisconnecting from server.");
-      client.stop();
-    }
-  } else {
-    logger("upload_data: WiFi NOT CONNECTED.");
-  }
-  return -1;
+    return -1;
 }
 
 void setup() {
-  Serial.begin(9600);
+    Serial.begin(9600);
 
-  if (!offline_mode) {
-    wifi_init();
-  }
+    if (!offline_mode) {
+        wifi_init();
+    }
 
-  //dht11
-  dht.begin();
+    //dht11
+    dht.begin();
 
-  //servo
-  myservo.attach(9);
+    //servo
+    myservo.attach(9);
 
-  //OLED
-  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
-  if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    logger("SSD1306 allocation failed");
-    for (;;)
-      ;  // Don't proceed, loop forever
-  }
-  display.clearDisplay();
-  display.setTextSize(2);
-  display.setTextColor(WHITE);
-  display_sensor_data();
+    //OLED
+    // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+    if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+        logger("SSD1306 allocation failed");
+        for (;;)
+            ;  // Don't proceed, loop forever
+    }
+    display.clearDisplay();
+    display.setTextSize(2);
+    display.setTextColor(WHITE);
+    display_sensor_data();
 
 
-  sensor_data_json["temperature"] = "-99";
-  sensor_data_json["humidity"] = "-99";
+    sensor_data_json["temperature"] = "-99";
+    sensor_data_json["humidity"] = "-99";
 }
 
 
 
 
 void react_toohot() {
-  int curpos = myservo.read();
-  if (curpos != coolingPosition) {
-    myservo.write(coolingPosition);
-  }
+    int curpos = myservo.read();
+    logger(String(curpos));
+    if (curpos != coolingPosition) {
+        myservo.write(coolingPosition);
+    }
 }
 
 void react_toocold() {
-  int curpos = myservo.read();
-  if (curpos != heatingPosition) {
-    myservo.write(heatingPosition);
-  }
+    int curpos = myservo.read();
+    logger(String(curpos));
+    if (curpos != heatingPosition) {
+        myservo.write(heatingPosition);
+    }
 }
 
 void servoStateHandler() {
-  int h2sNow = map(humidity, 40, 95, 0, 180);
-  int t2sNow = map(temperature, min_temp, max_temp, heatingPosition, coolingPosition);
+    int h2sNow = map(humidity, 40, 95, 0, 180);
+    int t2sNow = map(temperature, min_temp, max_temp, heatingPosition, coolingPosition);
 
-  if (h2sNow != h2s) {
-    //new values. set servo state.
-    h2s = h2sNow;
-  }
+    if (h2sNow != h2s) {
+        //new values. set servo state.
+        h2s = h2sNow;
+    }
 
-  if (t2sNow != t2s) {
-    t2s = t2sNow;
-  }
+    if (t2sNow != t2s) {
+        t2s = t2sNow;
+    }
 }
 
 
@@ -409,116 +405,116 @@ unsigned long LAST_TARGET_UPDATE_TIME = 0;
 float react_sensitivity_delta = 0.1;
 void loop() {
 
-  // check if enough time has passed for us to get new measurements.
-  //...
-  unsigned long TIME = millis();
+    // check if enough time has passed for us to get new measurements.
+    //...
+    unsigned long TIME = millis();
 
 
-  if (TIME - LAST_TARGET_UPDATE_TIME >= TARGET_UPDATE_DELAY || LAST_TARGET_UPDATE_TIME == 0) {
+    if (TIME - LAST_TARGET_UPDATE_TIME >= TARGET_UPDATE_DELAY || LAST_TARGET_UPDATE_TIME == 0) {
 
-    //check connection
-    if (WiFi.status() != WL_CONNECTED) {
-      //ERROR
-      logger("WIFI NOT CONNECTED! Attempting to reconnect.");
-      wifi_init();
-    } else {
-      update_targets();
-      LAST_TARGET_UPDATE_TIME = TIME;
-    }
-  }
-
-  if (TIME - LAST_SENSOR_UPDATE_TIME >= SENSOR_UPDATE_DELAY || LAST_SENSOR_UPDATE_TIME == 0) {
-    logger("SENSOR_UPDATE...");
-    // reads current temperature, saves value in 'temperature' global variable
-
-    switch (read_sensor_data()) {
-      case -1:
-        //something went wrong!
-        break;
-
-      case 1:
-        //read OK, but nothing was updated...
-        logger("Current temp: " + String(temperature) + "°C");
-        logger("Current humidity: " + String(humidity));
-        LAST_SENSOR_UPDATE_TIME = TIME;
-        break;
-
-      case 0:
-        LAST_SENSOR_UPDATE_TIME = TIME;
-        //Read OK, and something was updated.
-        logger("Current temp: " + String(temperature) + "°C");
-        logger("Current humidity: " + String(humidity));
-        sensor_data_json["temperature"] = temperature;
-        sensor_data_json["humidity"] = humidity;
-        display_sensor_data();
-        servoStateHandler();
-        break;
-
-      default:
-        //wtf?
-        break;
-    }
-    if (temperature < wants_temp) {
-      //if too far from targets, react accordingly
-      if (abs(wants_temp - temperature) > react_sensitivity_delta) {
-        react_toocold();
-      }
-    } else {
-      if (abs(wants_temp - temperature) > react_sensitivity_delta) {
-        react_toohot();
-      }
+        //check connection
+        if (WiFi.status() != WL_CONNECTED) {
+            //ERROR
+            logger("WIFI NOT CONNECTED! Attempting to reconnect.");
+            wifi_init();
+        } else {
+            update_targets();
+            LAST_TARGET_UPDATE_TIME = TIME;
+        }
     }
 
+    if (TIME - LAST_SENSOR_UPDATE_TIME >= SENSOR_UPDATE_DELAY || LAST_SENSOR_UPDATE_TIME == 0) {
+        logger("SENSOR_UPDATE...");
+        // reads current temperature, saves value in 'temperature' global variable
+
+        switch (read_sensor_data()) {
+        case -1:
+            //something went wrong!
+            break;
+
+        case 1:
+            //read OK, but nothing was updated...
+            logger("Current temp: " + String(temperature) + "°C");
+            logger("Current humidity: " + String(humidity));
+            LAST_SENSOR_UPDATE_TIME = TIME;
+            break;
+
+        case 0:
+            LAST_SENSOR_UPDATE_TIME = TIME;
+            //Read OK, and something was updated.
+            logger("Current temp: " + String(temperature) + "°C");
+            logger("Current humidity: " + String(humidity));
+            sensor_data_json["temperature"] = temperature;
+            sensor_data_json["humidity"] = humidity;
+            display_sensor_data();
+            servoStateHandler();
+            break;
+
+        default:
+            //wtf?
+            break;
+        }
+        if (temperature < wants_temp) {
+            //if too far from targets, react accordingly
+            if (abs(wants_temp - temperature) > react_sensitivity_delta) {
+                react_toocold();
+            }
+        } else {
+            if (abs(wants_temp - temperature) > react_sensitivity_delta) {
+                react_toohot();
+            }
+        }
 
 
-    loggersl("Target humidity: ");
-    logger(String(wants_humidity));
-    loggersl("Target temperature: ");
-    logger(String(wants_temp));
-    //upload new readings...
-    if (WiFi.status() != WL_CONNECTED) {
-      //ERROR
-      logger("WIFI NOT CONNECTED! Attempting to reconnect.");
-      wifi_init();
+
+        loggersl("Target humidity: ");
+        logger(String(wants_humidity));
+        loggersl("Target temperature: ");
+        logger(String(wants_temp));
+        //upload new readings...
+        if (WiFi.status() != WL_CONNECTED) {
+            //ERROR
+            logger("WIFI NOT CONNECTED! Attempting to reconnect.");
+            wifi_init();
+        }
+        upload_data(servername, serverport);
     }
-    upload_data(servername, serverport);
-  }
-  //
+    //
 }
 
 
 //connectivity testing...
 void pingServer() {
-  int pingResult;
-  loggersl("Pinging ");
-  loggersl(servername);
-  loggersl(": ");
+    int pingResult;
+    loggersl("Pinging ");
+    loggersl(servername);
+    loggersl(": ");
 
-  pingResult = WiFi.ping(servername);
+    pingResult = WiFi.ping(servername);
 
-  if (pingResult >= 0) {
-    loggersl("SUCCESS! RTT = ");
-    loggersl(String(pingResult));
-    logger(" ms");
-  } else {
-    loggersl("FAILED! Error code: ");
-    logger(String(pingResult));
-  }
+    if (pingResult >= 0) {
+        loggersl("SUCCESS! RTT = ");
+        loggersl(String(pingResult));
+        logger(" ms");
+    } else {
+        loggersl("FAILED! Error code: ");
+        logger(String(pingResult));
+    }
 }
 
 void printMacAddress(byte mac[]) {
-  if (logger_on) {
-    for (int i = 5; i >= 0; i--) {
-      if (mac[i] < 16) {
-        loggersl("0");
-      }
-      if (logger_on) {
-        Serial.print(mac[i], HEX);
-      }
-      if (i > 0) {
-        loggersl(":");
-      }
+    if (logger_on) {
+        for (int i = 5; i >= 0; i--) {
+            if (mac[i] < 16) {
+                loggersl("0");
+            }
+            if (logger_on) {
+                Serial.print(mac[i], HEX);
+            }
+            if (i > 0) {
+                loggersl(":");
+            }
+        }
+        logger("");
     }
-    logger("");
-  }
 }
