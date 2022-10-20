@@ -64,7 +64,7 @@ float min_temp = 17;
 float max_temp = 25;
 int h2s;  // humidity to servo state
 int t2s;  // temperature to servo state
-
+char heating_state='n';
 
 //servo position to set when cooling down // configure this!
 int coolingPosition = 0;
@@ -166,7 +166,13 @@ void display_sensor_data() {
     display.setCursor(0, 0);
     display.println(String(temperature) + " C");
     display.println(String(humidity) + " %");
-    display.println("Servo:" + String(myservo.read()));
+    display.println("Tgt:" + String(wants_temp) + " C");
+    //display.println("Servo:" + String(myservo.read()));
+    if (heating_state == 'c') {
+        display.println("Cooling...");
+    } else if (heating_state == 'h') {
+        display.println("Heating...");
+    }
     display.display();
 }
 
@@ -270,15 +276,12 @@ int update_targets() {
         client.stop();
         return -1;
     }
+    // Disconnect
+    client.stop();
     loggersl("target json response: ");
     serializeJson(json_response, Serial);
     logger("");
 
-    //targ_temperature = doc["temperature_targe"];
-    //targ_humidity = doc["humidity_target"];
-
-    //targ_temperature = doc["target_temperature"].as<float>();
-    //targ_humidity = doc["target_humidity"].as<float>();
 
     targ_temperature = json_response["targets_json"]["temperature_target"];
     targ_humidity = json_response["targets_json"]["humidity_target"];
@@ -287,11 +290,6 @@ int update_targets() {
     wants_temp = targ_temperature;
     wants_humidity = targ_humidity;
 
-    //logger("wants_temp: " + String(wants_temp));
-    //logger("wants_humidity: " + String(wants_humidity));
-
-    // Disconnect
-    client.stop();
 
     return 0;
 }
@@ -367,6 +365,7 @@ void react_toohot() {
     logger(String(curpos));
     if (curpos != coolingPosition) {
         myservo.write(coolingPosition);
+        heating_state = 'c';
     }
 }
 
@@ -375,6 +374,7 @@ void react_toocold() {
     logger(String(curpos));
     if (curpos != heatingPosition) {
         myservo.write(heatingPosition);
+        heating_state = 'h';
     }
 }
 
