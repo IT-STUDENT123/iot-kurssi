@@ -64,7 +64,7 @@ float min_temp = 17;
 float max_temp = 25;
 int h2s;  // humidity to servo state
 int t2s;  // temperature to servo state
-char heating_state='n';
+char heating_state = 'n';
 
 //servo position to set when cooling down // configure this!
 int coolingPosition = 0;
@@ -79,7 +79,8 @@ int heatingPosition = 90;
 const size_t capacity_sdj = JSON_OBJECT_SIZE(2);
 DynamicJsonDocument sensor_data_json(capacity_sdj);
 
-
+int upload_data();
+int upload_data(char*, int);
 
 //----------------------------------------------------------------------------
 
@@ -161,12 +162,13 @@ void wifi_connect() {
     }
 }
 
+
 void display_sensor_data() {
     display.clearDisplay();
     display.setCursor(0, 0);
     display.println(String(temperature) + " C");
     display.println(String(humidity) + " %");
-    display.println("Tgt:" + String(wants_temp) + " C");
+    display.println("Tgt:" + String(wants_temp, 1) + " C");
     //display.println("Servo:" + String(myservo.read()));
     if (heating_state == 'c') {
         display.println("Cooling...");
@@ -242,15 +244,15 @@ int update_targets() {
 
     // Check HTTP status
     /*
-    char status[32] = { 0 };
-    client.readBytesUntil('\r', status, sizeof(status));
-    // It should be "HTTP/1.0 200 OK" or "HTTP/1.1 200 OK"
-    if (strcmp(status + 9, "200 OK") != 0) {
-      loggersl("Unexpected response: ");
-      logger(status);
-      client.stop();
-      return -1;
-    }*/
+      char status[32] = { 0 };
+      client.readBytesUntil('\r', status, sizeof(status));
+      // It should be "HTTP/1.0 200 OK" or "HTTP/1.1 200 OK"
+      if (strcmp(status + 9, "200 OK") != 0) {
+        loggersl("Unexpected response: ");
+        logger(status);
+        client.stop();
+        return -1;
+      }*/
 
     // Skip HTTP headers
     char endOfHeaders[] = "\r\n\r\n";
@@ -279,29 +281,40 @@ int update_targets() {
     // Disconnect
     client.stop();
     loggersl("target json response: ");
-    serializeJson(json_response, Serial);
-    logger("");
 
+
+
+    String response_string;
+    serializeJson(json_response, response_string);
+    loggersl(response_string);
+    logger("");
 
     targ_temperature = json_response["targets_json"]["temperature_target"];
     targ_humidity = json_response["targets_json"]["humidity_target"];
 
+    bool update_display = false;
+    if (targ_temperature != wants_temp || targ_humidity != wants_humidity) {
+        update_display = true;
+    }
 
     wants_temp = targ_temperature;
     wants_humidity = targ_humidity;
 
+    if (update_display) {
+        return 1;
+    }
 
     return 0;
 }
 
-
+int upload_data() {
+    return upload_data(servername, serverport);
+}
 int upload_data(char *host, int port) {
     if (WiFi.status() == WL_CONNECTED) {
         //logger("upload_data: WiFi is connected.");
-        if (client.connect(host, serverport)) {
-
-            logger("Connected " + String(host) + ":" + port);
-            logger("Making request...");
+        if (client.connect(host, port)) {
+            logger("Connected " + String(host));
             String sensor_data_string;
             serializeJson(sensor_data_json, sensor_data_string);
             logger("Data: " + sensor_data_string);
@@ -315,11 +328,10 @@ int upload_data(char *host, int port) {
         } else {
             logger("SERVER CONNECTION FAILED!!!");
         }
-
-
         if (client.connected()) {
             logger("\ndisconnecting from server.");
             client.stop();
+            return 0;
         }
     } else {
         logger("upload_data: WiFi NOT CONNECTED.");
@@ -399,11 +411,12 @@ void servoStateHandler() {
 unsigned long SENSOR_UPDATE_DELAY = 5000;  // 5 seconds.
 unsigned long LAST_SENSOR_UPDATE_TIME = 0;
 
-unsigned long TARGET_UPDATE_DELAY = 10000;
+unsigned long TARGET_UPDATE_DELAY = 5000;
 unsigned long LAST_TARGET_UPDATE_TIME = 0;
 
 float react_sensitivity_delta = 0.1;
 void loop() {
+    bool update_display = false;
 
     // check if enough time has passed for us to get new measurements.
     //...
@@ -411,22 +424,27 @@ void loop() {
 
 
     if (TIME - LAST_TARGET_UPDATE_TIME >= TARGET_UPDATE_DELAY || LAST_TARGET_UPDATE_TIME == 0) {
-
-        //check connection
-        if (WiFi.status() != WL_CONNECTED) {
-            //ERROR
-            logger("WIFI NOT CONNECTED! Attempting to reconnect.");
-            wifi_init();
-        } else {
-            update_targets();
+        if (!offline_mode) {
+            //check connection
+            if (WiFi.status() != WL_CONNECTED) {
+                //ERROR
+                logger("WIFI NOT CONNECTED! Attempting to reconnect.");
+                wifi_init();
+            } else {
+                if (update_targets() == 1) {
+                    update_display = true;
+                }
+            }
             LAST_TARGET_UPDATE_TIME = TIME;
         }
     }
 
+
     if (TIME - LAST_SENSOR_UPDATE_TIME >= SENSOR_UPDATE_DELAY || LAST_SENSOR_UPDATE_TIME == 0) {
         logger("SENSOR_UPDATE...");
-        // reads current temperature, saves value in 'temperature' global variable
 
+
+        // reads current values from dht11 and saves to global variables
         switch (read_sensor_data()) {
         case -1:
             //something went wrong!
@@ -446,7 +464,8 @@ void loop() {
             logger("Current humidity: " + String(humidity));
             sensor_data_json["temperature"] = temperature;
             sensor_data_json["humidity"] = humidity;
-            display_sensor_data();
+            //display_sensor_data();
+            update_display = true;
             servoStateHandler();
             break;
 
@@ -465,21 +484,24 @@ void loop() {
             }
         }
 
-
+        if (update_display) {
+            display_sensor_data();
+        }
 
         loggersl("Target humidity: ");
         logger(String(wants_humidity));
         loggersl("Target temperature: ");
         logger(String(wants_temp));
+    }
+    if (!offline_mode) {
         //upload new readings...
         if (WiFi.status() != WL_CONNECTED) {
             //ERROR
             logger("WIFI NOT CONNECTED! Attempting to reconnect.");
             wifi_init();
         }
-        upload_data(servername, serverport);
+        upload_data();
     }
-    //
 }
 
 
